@@ -26,61 +26,36 @@
   с фоторезистора.
 */
 
-// ------------------------- НАСТРОЙКИ --------------------
-#define RESET_CLOCK 0       // сброс часов на время загрузки прошивки (для модуля с несъёмной батарейкой). Не забудь поставить 0 и прошить ещё раз!
-#define SENS_TIME 30000     // время обновления показаний сенсоров на экране, миллисекунд
-#define LED_MODE 1          // тип RGB светодиода: 0 - главный катод, 1 - главный анод
 
-// управление яркостью
-#define BRIGHT_CONTROL 1      // 0/1 - запретить/разрешить управление яркостью (при отключении яркость всегда будет макс.)
-#define BRIGHT_THRESHOLD 150  // величина сигнала, ниже которой яркость переключится на минимум (0-1023)
-#define LED_BRIGHT_MAX 255    // макс яркость светодиода СО2 (0 - 255)
-#define LED_BRIGHT_MIN 10     // мин яркость светодиода СО2 (0 - 255)
-#define LCD_BRIGHT_MAX 255    // макс яркость подсветки дисплея (0 - 255)
-#define LCD_BRIGHT_MIN 10     // мин яркость подсветки дисплея (0 - 255)
-
-#define BLUE_YELLOW 0       // жёлтый цвет вместо синего (1 да, 0 нет) но из за особенностей подключения жёлтый не такой яркий
-#define DISP_MODE 1         // в правом верхнем углу отображать: 0 - год, 1 - день недели, 2 - секунды
-#define WEEK_LANG 1         // язык дня недели: 0 - английский, 1 - русский (транслит)
-#define DEBUG 0             // вывод на дисплей лог инициализации датчиков при запуске. Для дисплея 1602 не работает! Но дублируется через порт!
-#define PRESSURE 1          // 0 - график давления, 1 - график прогноза дождя (вместо давления). Не забудь поправить пределы гроафика
-#define CO2_SENSOR 1        // включить или выключить поддержку/вывод с датчика СО2 (1 вкл, 0 выкл)
-#define DISPLAY_TYPE 1      // тип дисплея: 1 - 2004 (большой), 0 - 1602 (маленький)
-#define DISPLAY_ADDR 0x27   // адрес платы дисплея: 0x27 или 0x3f. Если дисплей не работает - смени адрес! На самом дисплее адрес не указан
-
-// пределы отображения для графиков
-#define TEMP_MIN 15
-#define TEMP_MAX 35
-#define HUM_MIN 0
-#define HUM_MAX 100
-#define PRESS_MIN -100
-#define PRESS_MAX 100
-#define CO2_MIN 300
-#define CO2_MAX 2000
-
-// адрес BME280 жёстко задан в файле библиотеки Adafruit_BME280.h
-// стоковый адрес был 0x77, у китайского модуля адрес 0x76.
-// Так что если юзаете НЕ библиотеку из архива - не забудьте поменять
-
-// если дисплей не заводится - поменяйте адрес (строка 54)
-
-// пины
-#define BACKLIGHT 10
-#define PHOTO 9
-
-#define MHZ_RX 12
-#define MHZ_TX 14
-
-#define LED_COM 13
-#define LED_R 15
-#define LED_G 3 
-#define LED_B 1
-#define BTN_PIN 2
 
 
 // библиотеки
+
+#include "Constants.h"
+#include "FSManager.h"
+#include "OtaManager.h"
+
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
+
+#include <ESP8266WiFi.h>
+#include <DNSServer.h>
+#include <ESP8266WebServer.h>
+#include <WiFiManager.h>
+#include <AsyncMqttClient.h>
+#include <Ticker.h>
+#include "Convert.h"
+///---------ИНИЦИАЛИЗАЦИЯ ОБЪЕКТОВ---------------
+static WiFiManager wifiManager;
+static FSManager fsManager;
+AsyncMqttClient mqttClient;
+#ifdef OTA
+OtaManager otaManager;
+#endif
+uint8_t Esp_mode = ESP_MODE_WIFI;                                // ESP_MODE может быть сохранён в энергонезависимую память и изменён в процессе работы контроллера без необходимости её перепрошивки
+bool shouldSaveConfig = false;
+
+
 
 #if (DISPLAY_TYPE == 1)
 LiquidCrystal_I2C lcd(DISPLAY_ADDR, 20, 4);
@@ -168,288 +143,59 @@ uint8_t LR[8] = {0b11111,  0b11111,  0b11111,  0b11111,  0b11111,  0b11111,  0b1
 uint8_t UMB[8] = {0b11111,  0b11111,  0b11111,  0b00000,  0b00000,  0b00000,  0b11111,  0b11111};
 uint8_t LMB[8] = {0b11111,  0b00000,  0b00000,  0b00000,  0b00000,  0b11111,  0b11111,  0b11111};
 
-void drawDig(byte dig, byte x, byte y) {
-  switch (dig) {
-    case 0:
-      lcd.setCursor(x, y); // set cursor to column 0, line 0 (first row)
-      lcd.write(0);  // call each segment to create
-      lcd.write(1);  // top half of the number
-      lcd.write(2);
-      lcd.setCursor(x, y + 1); // set cursor to colum 0, line 1 (second row)
-      lcd.write(3);  // call each segment to create
-      lcd.write(4);  // bottom half of the number
-      lcd.write(5);
-      break;
-    case 1:
-      lcd.setCursor(x + 1, y);
-      lcd.write(1);
-      lcd.write(2);
-      lcd.setCursor(x + 2, y + 1);
-      lcd.write(5);
-      break;
-    case 2:
-      lcd.setCursor(x, y);
-      lcd.write(6);
-      lcd.write(6);
-      lcd.write(2);
-      lcd.setCursor(x, y + 1);
-      lcd.write(3);
-      lcd.write(7);
-      lcd.write(7);
-      break;
-    case 3:
-      lcd.setCursor(x, y);
-      lcd.write(6);
-      lcd.write(6);
-      lcd.write(2);
-      lcd.setCursor(x, y + 1);
-      lcd.write(7);
-      lcd.write(7);
-      lcd.write(5);
-      break;
-    case 4:
-      lcd.setCursor(x, y);
-      lcd.write(3);
-      lcd.write(4);
-      lcd.write(2);
-      lcd.setCursor(x + 2, y + 1);
-      lcd.write(5);
-      break;
-    case 5:
-      lcd.setCursor(x, y);
-      lcd.write(0);
-      lcd.write(6);
-      lcd.write(6);
-      lcd.setCursor(x, y + 1);
-      lcd.write(7);
-      lcd.write(7);
-      lcd.write(5);
-      break;
-    case 6:
-      lcd.setCursor(x, y);
-      lcd.write(0);
-      lcd.write(6);
-      lcd.write(6);
-      lcd.setCursor(x, y + 1);
-      lcd.write(3);
-      lcd.write(7);
-      lcd.write(5);
-      break;
-    case 7:
-      lcd.setCursor(x, y);
-      lcd.write(1);
-      lcd.write(1);
-      lcd.write(2);
-      lcd.setCursor(x + 1, y + 1);
-      lcd.write(0);
-      break;
-    case 8:
-      lcd.setCursor(x, y);
-      lcd.write(0);
-      lcd.write(6);
-      lcd.write(2);
-      lcd.setCursor(x, y + 1);
-      lcd.write(3);
-      lcd.write(7);
-      lcd.write(5);
-      break;
-    case 9:
-      lcd.setCursor(x, y);
-      lcd.write(0);
-      lcd.write(6);
-      lcd.write(2);
-      lcd.setCursor(x + 1, y + 1);
-      lcd.write(4);
-      lcd.write(5);
-      break;
-    case 10:
-      lcd.setCursor(x, y);
-      lcd.write(32);
-      lcd.write(32);
-      lcd.write(32);
-      lcd.setCursor(x, y + 1);
-      lcd.write(32);
-      lcd.write(32);
-      lcd.write(32);
-      break;
-  }
-}
-
-void drawdots(byte x, byte y, boolean state) {
-  byte code;
-  if (state) code = 165;
-  else code = 32;
-  lcd.setCursor(x, y);
-  lcd.write(code);
-  lcd.setCursor(x, y + 1);
-  lcd.write(code);
-}
-
-void drawClock(byte hours, byte minutes, byte x, byte y, boolean dotState) {
-  // чисти чисти!
-  lcd.setCursor(x, y);
-  lcd.print("               ");
-  lcd.setCursor(x, y + 1);
-  lcd.print("               ");
-
-  //if (hours > 23 || minutes > 59) return;
-  if (hours / 10 == 0) drawDig(10, x, y);
-  else drawDig(hours / 10, x, y);
-  drawDig(hours % 10, x + 4, y);
-  // тут должны быть точки. Отдельной функцией
-  drawDig(minutes / 10, x + 8, y);
-  drawDig(minutes % 10, x + 12, y);
-}
-
-#if (WEEK_LANG == 0)
-static const char *dayNames[]  = {
-  "Sund",
-  "Mond",
-  "Tues",
-  "Wedn",
-  "Thur",
-  "Frid",
-  "Satu",
-};
-#else
-static const char *dayNames[]  = {
-  "BOCK",
-  "POND",
-  "BTOP",
-  "CPED",
-  "4ETB",
-  "5YAT",
-  "CYBB",
-};
-#endif
-
-void drawData() {
-  lcd.setCursor(15, 0);
-  if (now.day() < 10) lcd.print(0);
-  lcd.print(now.day());
-  lcd.print(".");
-  if (now.month() < 10) lcd.print(0);
-  lcd.print(now.month());
-
-  if (DISP_MODE == 0) {
-    lcd.setCursor(16, 1);
-    lcd.print(now.year());
-  } else if (DISP_MODE == 1) {
-    lcd.setCursor(16, 1);
-    int dayofweek = now.dayOfTheWeek();
-    lcd.print(dayNames[dayofweek]);
-  }
-}
-
-void drawPlot(byte pos, byte row, byte width, byte height, int min_val, int max_val, int *plot_array, String label) {
-  int max_value = -32000;
-  int min_value = 32000;
-
-  for (byte i = 0; i < 15; i++) {
-    if (plot_array[i] > max_value) max_value = plot_array[i];
-    if (plot_array[i] < min_value) min_value = plot_array[i];
-  }
-  lcd.setCursor(16, 0); lcd.print(max_value);
-  lcd.setCursor(16, 1); lcd.print(label);
-  lcd.setCursor(16, 2); lcd.print(plot_array[14]);
-  lcd.setCursor(16, 3); lcd.print(min_value);
-
-  for (byte i = 0; i < width; i++) {                  // каждый столбец параметров
-    int fill_val = plot_array[i];
-    fill_val = constrain(fill_val, min_val, max_val);
-    byte infill, fract;
-    // найти количество целых блоков с учётом минимума и максимума для отображения на графике
-    if (plot_array[i] > min_val)
-      infill = floor((float)(plot_array[i] - min_val) / (max_val - min_val) * height * 10);
-    else infill = 0;
-    fract = (float)(infill % 10) * 8 / 10;                   // найти количество оставшихся полосок
-    infill = infill / 10;
-
-    for (byte n = 0; n < height; n++) {     // для всех строк графика
-      if (n < infill && infill > 0) {       // пока мы ниже уровня
-        lcd.setCursor(i, (row - n));        // заполняем полными ячейками
-        lcd.write(0);
-      }
-      if (n >= infill) {                    // если достигли уровня
-        lcd.setCursor(i, (row - n));
-        if (fract > 0) lcd.write(fract);          // заполняем дробные ячейки
-        else lcd.write(16);                       // если дробные == 0, заливаем пустой
-        for (byte k = n + 1; k < height; k++) {   // всё что сверху заливаем пустыми
-          lcd.setCursor(i, (row - k));
-          lcd.write(16);
-        }
-        break;
-      }
-    }
-  }
-}
-
-void loadClock() {
-  lcd.createChar(0, LT);
-  lcd.createChar(1, UB);
-  lcd.createChar(2, RT);
-  lcd.createChar(3, LL);
-  lcd.createChar(4, LB);
-  lcd.createChar(5, LR);
-  lcd.createChar(6, UMB);
-  lcd.createChar(7, LMB);
-}
-
-void loadPlot() {
-  lcd.createChar(0, row8);
-  lcd.createChar(1, row1);
-  lcd.createChar(2, row2);
-  lcd.createChar(3, row3);
-  lcd.createChar(4, row4);
-  lcd.createChar(5, row5);
-  lcd.createChar(6, row6);
-  lcd.createChar(7, row7);
-}
-
-#if (LED_MODE == 0)
-byte LED_ON = (LED_BRIGHT_MAX);
-byte LED_OFF = (LED_BRIGHT_MIN);
-#else
-byte LED_ON = (255 - LED_BRIGHT_MAX);
-byte LED_OFF = (255 - LED_BRIGHT_MIN);
-#endif
-
-void setLED(byte color) {
-  // сначала всё выключаем
-  if (!LED_MODE) {
-    analogWrite(LED_R, 0);
-    analogWrite(LED_G, 0);
-    analogWrite(LED_B, 0);
-  } else {
-    analogWrite(LED_R, 255);
-    analogWrite(LED_G, 255);
-    analogWrite(LED_B, 255);
-  }
-  switch (color) {    // 0 выкл, 1 красный, 2 зелёный, 3 синий (или жёлтый)
-    case 0:
-      break;
-    case 1: analogWrite(LED_R, LED_ON);
-      break;
-    case 2: analogWrite(LED_G, LED_ON);
-      break;
-    case 3:
-      if (!BLUE_YELLOW) analogWrite(LED_B, LED_ON);
-      else {
-        analogWrite(LED_R, LED_ON - 50);    // чутка уменьшаем красный
-        analogWrite(LED_G, LED_ON);
-      }
-      break;
-  }
-}
-
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(115200);
+  ESP.wdtEnable(WDTO_8S);
+
+
+ // TELNET
+#if defined(GENERAL_DEBUG) && GENERAL_DEBUG_TELNET
+  Log.println("[GENERAL_DEBUG_TELNET]");
+  telnetServer.begin();
+  for (uint8_t i = 0; i < 100; i++)                         // пауза 10 секунд в отладочном режиме, чтобы успеть подключиться по протоколу telnet до вывода первых сообщений
+  {
+    handleTelnetClient();
+    delay(100);
+    ESP.wdtFeed();
+  }
+#endif
+
+  //FileSystem
+
+  Log.println("Mounting FS...");
+
+  if (!SPIFFS.begin()) {
+    Log.println("Failed to mount file system");
+    SPIFFS.format();
+    //    EepromManager::ResetEEPROM();
+    wifiManager.resetSettings();
+    wifiManager.erase();
+    return;
+  }
+  if (!fsManager.LoadConfig()) {
+    Log.println("Failed to load config");
+    if (!fsManager.SaveConfig()) {
+      Log.println("Failed to save config..... FS Format...");
+      SPIFFS.format();
+      ESP.restart();
+      delay(1000);
+    } else {
+      Log.println("Config saved");
+    }
+  } else {
+    Log.println("Config loaded");
+  }
+ // WI-FI
+  connectToWifi();
 
   pinMode(BACKLIGHT, OUTPUT);
   pinMode(LED_COM, OUTPUT);
   pinMode(LED_R, OUTPUT);
   pinMode(LED_G, OUTPUT);
   pinMode(LED_B, OUTPUT);
+
+  
+  pinMode(PHOTO, INPUT);
   setLED(0);
 
   digitalWrite(LED_COM, LED_MODE);
@@ -459,83 +205,86 @@ void setup() {
   lcd.backlight();
   lcd.clear();
 
-#if (DEBUG == 1 && DISPLAY_TYPE == 1)
+if (DISPLAY_TYPE == 1)
+{
   boolean status = true;
 
   setLED(1);
 
-#if (CO2_SENSOR == 1)
-  lcd.setCursor(0, 0);
-  lcd.print(F("MHZ-19... "));
-  Serial.print(F("MHZ-19... "));
-  mhz19.begin(MHZ_TX, MHZ_RX);
-  mhz19.setAutoCalibration(false);
-  mhz19.getStatus();    // первый запрос, в любом случае возвращает -1
-  delay(500);
-  if (mhz19.getStatus() == 0) {
-    lcd.print(F("OK"));
-    Serial.println(F("OK"));
-  } else {
-    lcd.print(F("ERROR"));
-    Serial.println(F("ERROR"));
-    status = false;
-  }
-#endif
+  #if (CO2_SENSOR == 1)
+    lcd.setCursor(0, 0);
+    lcd.print(F("MHZ-19... "));
+    Serial.print(F("MHZ-19... "));
+    mhz19.begin(MHZ_TX, MHZ_RX);
+    mhz19.setAutoCalibration(false);
+    mhz19.getStatus();    // первый запрос, в любом случае возвращает -1
+    delay(500);
+    if (mhz19.getStatus() == 0) {
+      lcd.print(F("OK"));
+      Serial.println(F("OK"));
+    } else {
+      lcd.print(F("ERROR"));
+      Serial.println(F("ERROR"));
+      status = false;
+    }
+  #endif
+  
+    setLED(2);
+    lcd.setCursor(0, 1);
+    lcd.print(F("RTC... "));
+    Serial.print(F("RTC... "));
+    delay(50);
+    if (rtc.begin()) {
+      lcd.print(F("OK"));
+      Serial.println(F("OK"));
+    } else {
+      lcd.print(F("ERROR"));
+      Serial.println(F("ERROR"));
+      status = false;
+    }
+  
+    setLED(3);
+    lcd.setCursor(0, 2);
+    lcd.print(F("BME280... "));
+    Serial.print(F("BME280... "));
+    delay(50);
+    if (bme.begin(&Wire)) {
+      lcd.print(F("OK"));
+      Serial.println(F("OK"));
+    } else {
+      lcd.print(F("ERROR"));
+      Serial.println(F("ERROR"));
+      status = false;
+    }
+  
+    setLED(0);
+    lcd.setCursor(0, 3);
+    if (status) {
+      lcd.print(F("All good"));
+      Serial.println(F("All good"));
+    } else {
+      lcd.print(F("Check wires!"));
+      Serial.println(F("Check wires!"));
+    }
+    int k = 0;
+    while (k++ < 20) {
+      lcd.setCursor(14, 1);
+      lcd.print("P:    ");
+      lcd.setCursor(16, 1);
+      lcd.print(analogRead(PHOTO), 1);
+      Serial.println(analogRead(PHOTO));
+      delay(300);
+    }
+} 
 
-  setLED(2);
-  lcd.setCursor(0, 1);
-  lcd.print(F("RTC... "));
-  Serial.print(F("RTC... "));
-  delay(50);
-  if (rtc.begin()) {
-    lcd.print(F("OK"));
-    Serial.println(F("OK"));
-  } else {
-    lcd.print(F("ERROR"));
-    Serial.println(F("ERROR"));
-    status = false;
-  }
+//  
+//  #if (CO2_SENSOR == 1)
+//    mhz19.begin(MHZ_TX, MHZ_RX);
+//    mhz19.setAutoCalibration(false);
+//  #endif
+//    rtc.begin();
+//    bme.begin(&Wire);
 
-  setLED(3);
-  lcd.setCursor(0, 2);
-  lcd.print(F("BME280... "));
-  Serial.print(F("BME280... "));
-  delay(50);
-  if (bme.begin(&Wire)) {
-    lcd.print(F("OK"));
-    Serial.println(F("OK"));
-  } else {
-    lcd.print(F("ERROR"));
-    Serial.println(F("ERROR"));
-    status = false;
-  }
-
-  setLED(0);
-  lcd.setCursor(0, 3);
-  if (status) {
-    lcd.print(F("All good"));
-    Serial.println(F("All good"));
-  } else {
-    lcd.print(F("Check wires!"));
-    Serial.println(F("Check wires!"));
-  }
-  while (1) {
-    lcd.setCursor(14, 1);
-    lcd.print("P:    ");
-    lcd.setCursor(16, 1);
-    lcd.print(analogRead(PHOTO), 1);
-    Serial.println(analogRead(PHOTO));
-    delay(300);
-  }
-#else
-
-#if (CO2_SENSOR == 1)
-  mhz19.begin(MHZ_TX, MHZ_RX);
-  mhz19.setAutoCalibration(false);
-#endif
-  rtc.begin();
-  bme.begin(&Wire);
-#endif
 
   bme.setSampling(Adafruit_BME280::MODE_FORCED,
                   Adafruit_BME280::SAMPLING_X1, // temperature
@@ -565,6 +314,15 @@ void setup() {
   }
   readSensors();
   drawSensors();
+   
+
+#ifdef OTA
+  //otaManager.Begin(strcat(ESP_AP_NAME, fsManager.device_name));
+  otaManager.Begin(ESP_AP_NAME);
+#endif
+
+  //MQTT
+  connectToMqtt();
 }
 
 void loop() {
@@ -583,4 +341,14 @@ void loop() {
 #else
   if (drawSensorsTimer.isReady()) drawSensors();
 #endif
+
+#ifdef OTA
+  otaManager.Handle();
+#endif
+
+#if defined(GENERAL_DEBUG) && GENERAL_DEBUG_TELNET
+  handleTelnetClient();
+#endif
+
+ESP.wdtFeed();
 }
