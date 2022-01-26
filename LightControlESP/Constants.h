@@ -28,19 +28,19 @@
 #endif
 
 
-#define BTN_SWITCH_2_USE
+//#define BTN_SWITCH_2_USE
 #ifdef   BTN_SWITCH_2_USE
 #define BTN_SWITCH_2                  (4U)         //D2 клавиша переключения света
 #endif
 
 
-#define  BTN_SENSOR_1_USE
+//#define  BTN_SENSOR_1_USE
 #ifdef BTN_SENSOR_1_USE
 #define BTN_SENSOR_1            (14U)         //D5 клавиша переключения света
 #endif
 
 
-#define BTN_SENSOR_2_USE
+//#define BTN_SENSOR_2_USE
 #ifdef BTN_SENSOR_2_USE
 #define BTN_SENSOR_2            (12U)         //D6 клавиша переключения света
 #endif
@@ -49,13 +49,13 @@
 // --- ЛЕДЫ -----------------------------------
 #define LED_1_USE
 #ifdef LED_1_USE
-#define LED_1                        (2U)         //D4 пин выхода на лампочку
-#define LED_1_INVERT                 (true)       //инвертирование согнала на открытие реле
+#define LED_1                        (16U)         //D0 пин выхода на лампочку
+#define LED_1_INVERT                 (false)       //инвертирование согнала на открытие реле
 #endif
 
-#define LED_2_USE
+//#define LED_2_USE
 #ifdef LED_2_USE
-#define LED_2                        (16U)         //D0 пин выхода на лампочку
+#define LED_2                        (2U)         //D4 пин выхода на лампочку
 #define LED_2_INVERT                 (true)       //инвертирование согнала на открытие реле
 #endif
 

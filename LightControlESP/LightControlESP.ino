@@ -78,8 +78,7 @@ void setup() {
 #endif
 
   //FileSystem
-
-  Log.println("Mounting FS...");
+Log.printf_P(PSTR("Mounting FS..."));
 
   if (!SPIFFS.begin()) {
     Log.println("Failed to mount file system");
